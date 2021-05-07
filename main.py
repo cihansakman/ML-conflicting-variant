@@ -57,8 +57,8 @@ print(conflicting_data.shape)
 conflicting_data = conflicting_data.replace(['-', 'not_specified', 'NULL'], np.nan)
 
 # Percentage of null values for each feature
-print("** Percentage of null values for each feature **\n")
-total_num_of_values = conflicting_data.shape[0]
+# print("** Percentage of null values for each feature **\n")
+# total_num_of_values = conflicting_data.shape[0]
 # print(((conflicting_data.isnull().sum()) / total_num_of_values ) * 100 )
 
 
@@ -66,10 +66,7 @@ print("Before drop nan cols", conflicting_data.shape)
 
 # If there is a column which has more than %99 percentage(fully nan) null we'll drop it.
 conflicting_data = conflicting_data.loc[:, conflicting_data.isnull().mean() < .99]
-print(((conflicting_data.isnull().sum()) / total_num_of_values) * 100)
-
-# summarize the content
-# conflicting_data.info()
+# print(((conflicting_data.isnull().sum()) / total_num_of_values ) * 100 )
 
 
 ''' 
@@ -169,22 +166,33 @@ conflicting_data = makeExonFloat(conflicting_data, 'EXON')
 # convert EXON column to float
 conflicting_data[['EXON']] = conflicting_data[['EXON']].apply(pd.to_numeric)
 
-# #We can get the count of unique values for each column.
-# for col in conflicting_data.columns:
-#     print(col+' '+str(len(conflicting_data[col].unique())))
-#     #print(conflicting_data[col].unique())
-#     print()
-
-
 # #summarize the content
 # conflicting_data.info()
+
 
 '''
 In 'POS','CLNHGVS', and 'CLNVI'(%53 NaN already and have 27k unique values) features are unique for each variant. Therefore we can drop them.
 '''
 conflicting_data.drop(['POS', 'CLNHGVS', 'CLNVI'], axis=1, inplace=True)
 
-print("After drop nan cols", conflicting_data.shape, "\n")  # 30 olmalı
+'''
+'Feature_type' ,'BIOTYPE' all values are same
+'''
 
+print("After drop nan cols", conflicting_data.shape, "\n")
 
+print("**************************")
+
+# We can get the count of unique values for each column.
+for col in conflicting_data.columns:
+    print(col + ' ' + str(len(conflicting_data[col].unique())) + ' ', (conflicting_data[col]).dtype)
+    if (
+            col == "BIOTYPE" or col == "CLNVC" or col == "STRAND" or col == "BAM_EDIT" or col == "SIFT" or col == "PolyPhen" or col == "BLOSUM62"):
+        print(conflicting_data[col].unique())
+    print()
+
+# There is natural order in IMPACT -> ['MODERATE' 'MODIFIER' 'LOW' 'HIGH']
+# BAM_EDIT 3 [nan 'OK' 'FAILED']
+# PolyPhen 5 ['benign' 'probably_damaging' nan 'possibly_damaging' 'unknown']
+# SIFT 5 ['tolerated' 'deleterious_low_confidence' 'deleterious' nan 'tolerated_low_confidence']
 
