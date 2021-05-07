@@ -50,6 +50,9 @@ conflicting_data = pd.read_csv("C:\\Users\\sakma\\Desktop\\Ders Kayıtları\\ML-
 
 print(conflicting_data.shape)
 
+# ********PREPROCESSING********#
+
+
 # If there is such values consider them as NaN
 conflicting_data = conflicting_data.replace(['-', 'not_specified', 'NULL'], np.nan)
 
@@ -61,21 +64,12 @@ total_num_of_values = conflicting_data.shape[0]
 
 print("Before drop nan cols", conflicting_data.shape)
 
-# If there is a column which has more than %60 percentage null we'll drop it.
-conflicting_data.dropna(thresh=total_num_of_values * 0.6, how='all', axis=1, inplace=True)
-# print(((conflicting_data.isnull().sum()) / total_num_of_values ) * 100 )
-
-print("After drop nan cols", conflicting_data.shape, "\n")
+# If there is a column which has more than %99 percentage(fully nan) null we'll drop it.
+conflicting_data = conflicting_data.loc[:, conflicting_data.isnull().mean() < .99]
+print(((conflicting_data.isnull().sum()) / total_num_of_values) * 100)
 
 # summarize the content
 # conflicting_data.info()
-
-
-# #We can get the count of unique values for each column.
-# for col in conflicting_data.columns:
-#     print(col+' '+str(len(conflicting_data[col].unique())))
-#     #print(conflicting_data[col].unique())
-#     print()
 
 
 ''' 
@@ -113,35 +107,84 @@ for i in ['cDNA_position', 'CDS_position', 'Protein_position']:
 conflicting_data[['cDNA_position', 'CDS_position', 'Protein_position']] = conflicting_data[
     ['cDNA_position', 'CDS_position', 'Protein_position']].apply(pd.to_numeric)
 
-# CHROM there is some X values we'll assume that these are NaN values.
+'''
+In CHROM collum there is values between 1-22 and some X and MT values. X means chromosome X and MT means mitochondrial chromosome.
+There is no Y chromosome therefore we can assume that our patient is a woman. We'll keep X as 23 and MT as 24. Then convert it's type into numeric
+'''
 
+conflicting_data['CHROM'] = conflicting_data['CHROM'].replace('X', 23)
+conflicting_data['CHROM'] = conflicting_data['CHROM'].replace('MT', 24)
+conflicting_data[['CHROM']] = conflicting_data[['CHROM']].apply(pd.to_numeric)
 
-# CSDN OLANLAR İÇİN OBJECT -> INT YAPMALIYIZ.
+# correlation matrix for data
 corrmat = conflicting_data.corr()
 f, ax = plt.subplots(figsize=(12, 9))
 sns.heatmap(corrmat, vmax=.8, square=True, annot=True);
 plt.show()
 
+'''After analyzing correlation matrix we clearly see that 'cDNA_position', 'CDS_position','Protein_position'
+features has 1 correlation between them. We can drop two of them and use just cDNA_position because it has less
+nan value.
+'''
+conflicting_data.drop(['CDS_position', 'Protein_position'], axis=1, inplace=True)
+
 # Correlation between CAD_RAW and CADD_PHRED is 0.96 then we'll drop one of them.
 conflicting_data.drop(["CADD_RAW"], axis=1, inplace=True)
 
-# summarize the content
-conflicting_data.info()
+'''
+For EXON and INTRON their NaN ratios are parallel. The percentage of NaN values for INTRON is %86.4,
+and the percentage of NaN values for EXON is %13.6. Therefore we'll fill the NaN values of EXON with
+the corresponding values of INTRON
+'''
+conflicting_data["EXON"][conflicting_data["EXON"].isnull()] = conflicting_data["INTRON"][
+    conflicting_data["INTRON"].notnull()]
+# Now we can drop the INTRON
+conflicting_data.drop(["INTRON"], axis=1, inplace=True)
+# print(conflicting_data[["EXON","INTRON"]][conflicting_data["INTRON"].notnull() & conflicting_data["EXON"].isnull()])
+
+'''
+EXON feature is stand for the exon number (out of total number). That's mean we can covert it into float.
+'''
 
 
+# Here we have a function which will make EXON values float
+def makeExonFloat(df, colname):
+    index = 0;
+    # nan values' type is float, others str
+    for value in df[[colname]].values:
+        # If the value is in form a/b(etc.) there will be a ValueError when try to find math.isnan.
+        try:
+            math.isnan(value)
+
+        except ValueError:
+            split_form = value[0].split("/")
+            df[colname][index] = float(split_form[0]) / float(split_form[1])
+
+        index += 1
+    return df
 
 
+# call the function
+conflicting_data = makeExonFloat(conflicting_data, 'EXON')
+# convert EXON column to float
+conflicting_data[['EXON']] = conflicting_data[['EXON']].apply(pd.to_numeric)
+
+# #We can get the count of unique values for each column.
+# for col in conflicting_data.columns:
+#     print(col+' '+str(len(conflicting_data[col].unique())))
+#     #print(conflicting_data[col].unique())
+#     print()
 
 
+# #summarize the content
+# conflicting_data.info()
 
+'''
+In 'POS','CLNHGVS', and 'CLNVI'(%53 NaN already and have 27k unique values) features are unique for each variant. Therefore we can drop them.
+'''
+conflicting_data.drop(['POS', 'CLNHGVS', 'CLNVI'], axis=1, inplace=True)
 
-
-
-
-
-
-
-
+print("After drop nan cols", conflicting_data.shape, "\n")  # 30 olmalı
 
 
 
