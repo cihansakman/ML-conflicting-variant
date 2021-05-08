@@ -114,10 +114,10 @@ conflicting_data['CHROM'] = conflicting_data['CHROM'].replace('MT', 24)
 conflicting_data[['CHROM']] = conflicting_data[['CHROM']].apply(pd.to_numeric)
 
 # correlation matrix for data
-corrmat = conflicting_data.corr()
-f, ax = plt.subplots(figsize=(12, 9))
-sns.heatmap(corrmat, vmax=.8, square=True, annot=True);
-plt.show()
+# corrmat = conflicting_data.corr()
+# f, ax = plt.subplots(figsize=(12, 9))
+# sns.heatmap(corrmat, vmax=.8, square=True,annot=True);
+# plt.show()
 
 '''After analyzing correlation matrix we clearly see that 'cDNA_position', 'CDS_position','Protein_position'
 features has 1 correlation between them. We can drop two of them and use just cDNA_position because it has less
@@ -176,23 +176,63 @@ In 'POS','CLNHGVS', and 'CLNVI'(%53 NaN already and have 27k unique values) feat
 conflicting_data.drop(['POS', 'CLNHGVS', 'CLNVI'], axis=1, inplace=True)
 
 '''
-'Feature_type' ,'BIOTYPE' all values are same
+'Feature_type' ,'BIOTYPE' almost all values are same therefore we'll drop these columns
 '''
+# print("'Feature_type' ,'BIOTYPE' almost all values are same therefore we'll drop these columns")
 
-print("After drop nan cols", conflicting_data.shape, "\n")
+# print(conflicting_data['BIOTYPE'].value_counts())
+# print(conflicting_data['Feature_type'].value_counts())
+# print("**************************")
+conflicting_data.drop(['BIOTYPE', 'Feature_type'], axis=1, inplace=True)
 
-print("**************************")
+'''
+ALT(Alternate allele) and Allele are the same. Then we can drop Allele because it has some null values but ALT doesn't
+'''
+conflicting_data.drop(['Allele'], axis=1, inplace=True)
 
 # We can get the count of unique values for each column.
-for col in conflicting_data.columns:
-    print(col + ' ' + str(len(conflicting_data[col].unique())) + ' ', (conflicting_data[col]).dtype)
-    if (
-            col == "BIOTYPE" or col == "CLNVC" or col == "STRAND" or col == "BAM_EDIT" or col == "SIFT" or col == "PolyPhen" or col == "BLOSUM62"):
-        print(conflicting_data[col].unique())
-    print()
+# for col in conflicting_data.columns:
+#     print(col+' '+str(len(conflicting_data[col].unique())) +' ',(conflicting_data[col]).dtype)
+#     if(col == "BIOTYPE" or col == "CLNVC" or col == "STRAND" or col == "BAM_EDIT" or col == "SIFT" or col == "Feature_type" or col == "IMPACT" ):
+#         print(conflicting_data[col].unique())
+#     print()
+
 
 # There is natural order in IMPACT -> ['MODERATE' 'MODIFIER' 'LOW' 'HIGH']
 # BAM_EDIT 3 [nan 'OK' 'FAILED']
 # PolyPhen 5 ['benign' 'probably_damaging' nan 'possibly_damaging' 'unknown']
 # SIFT 5 ['tolerated' 'deleterious_low_confidence' 'deleterious' nan 'tolerated_low_confidence']
+# CLNVC 7  object ['single_nucleotide_variant' 'Deletion' 'Duplication' 'Indel' 'Inversion''Insertion' 'Microsatellite'] %94'ü single_nucleotide
+
+
+# Counts of unique values in feature
+# print(conflicting_data['REF'].value_counts())
+# print("**************************")
+# print("**************************")
+# print("**************************")
+# print(conflicting_data['ALT'].value_counts())
+
+
+# ENCODING
+from sklearn import preprocessing
+
+le = preprocessing.LabelEncoder()
+
+# Our binary columns are: ("vital_status","gender","disease")
+binary_cols = ("ALT", "REF")
+for i in binary_cols:
+    column = conflicting_data.iloc[:,
+             conflicting_data.columns.get_loc(i):conflicting_data.columns.get_loc(i) + 1].values
+    conflicting_data.iloc[:,
+    conflicting_data.columns.get_loc(i):conflicting_data.columns.get_loc(i) + 1] = le.fit_transform(column[:, 0])
+
+print("After drop nan cols", conflicting_data.shape, "\n")
+
+
+
+
+
+
+
+
 
