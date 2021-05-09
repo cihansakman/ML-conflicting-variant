@@ -111,7 +111,8 @@ There is no Y chromosome therefore we can assume that our patient is a woman. We
 
 conflicting_data['CHROM'] = conflicting_data['CHROM'].replace('X', 23)
 conflicting_data['CHROM'] = conflicting_data['CHROM'].replace('MT', 24)
-conflicting_data[['CHROM']] = conflicting_data[['CHROM']].apply(pd.to_numeric)
+# It should be string because CHROM is a categorical column
+conflicting_data[['CHROM']] = conflicting_data[['CHROM']].astype(str)
 
 # correlation matrix for data
 # corrmat = conflicting_data.corr()
@@ -125,8 +126,9 @@ nan value.
 '''
 conflicting_data.drop(['CDS_position', 'Protein_position'], axis=1, inplace=True)
 
-# Correlation between CAD_RAW and CADD_PHRED is 0.96 then we'll drop one of them.
-conflicting_data.drop(["CADD_RAW"], axis=1, inplace=True)
+# #Correlation between CAD_RAW and CADD_PHRED is 0.96 then we'll drop one of them.
+# conflicting_data.drop(["CADD_RAW"], axis=1, inplace=True)
+
 
 '''
 For EXON and INTRON their NaN ratios are parallel. The percentage of NaN values for INTRON is %86.4,
@@ -232,8 +234,8 @@ conflicting_data.drop(['CLNDISDB'], axis=1, inplace=True)
 # In CLNDN there is not_specified and not_provided seperately. We'll assume not_provided as not_specified.
 conflicting_data['CLNDN'] = conflicting_data['CLNDN'].replace('not_provided', 'not_specified')
 
-# We'll make CLNDN feature as binary. Whether Tag-value pairs have disease or not. If it has disease yes, else no.
-conflicting_data["pairs_has_disease"] = np.where((conflicting_data["CLNDN"] == 'not_specified'), 'no', 'yes')
+# We'll make CLNDN feature as binary. Whether Tag-value pairs have disease or not. If it has disease 1, else 0.
+conflicting_data["pairs_has_disease"] = np.where((conflicting_data["CLNDN"] == 'not_specified'), 0, 1)
 conflicting_data.drop(['CLNDN'], axis=1, inplace=True)
 
 # Counts of unique values in feature
@@ -266,6 +268,7 @@ for non-single nucleotide varient. We'll fill the values with -1.
 '''
 # print(conflicting_data[["CADD_PHRED","CLNVC"]][conflicting_data["CADD_PHRED"].isnull() & conflicting_data["CADD_PHRED"] == 1]) #it'll return empty array
 conflicting_data['CADD_PHRED'] = conflicting_data['CADD_PHRED'].replace(np.nan, -1)
+conflicting_data['CADD_RAW'] = conflicting_data['CADD_RAW'].replace(np.nan, -1)
 
 '''
 Fill EXON NaN values with 0(it means there is no EXON)
@@ -310,19 +313,77 @@ conflicting_data['LoFtool'] = imr.transform(conflicting_data[['LoFtool']]).ravel
 # summarize the content
 conflicting_data.info()
 
+# correlation matrix for data
+# corrmat = conflicting_data.corr()
+# f, ax = plt.subplots(figsize=(12, 9))
+# sns.heatmap(corrmat, vmax=.8, square=True,annot=True);
+# plt.show()
+
+
 # ENCODING
 
 
 # categorical_features = ['CHROM', 'IMPACT', 'STRAND', 'BAM_EDIT', 'SIFT', 'PolyPhen',
 #                         'BLOSUM62','Consequence']
 
+binary_cols = ['CLNVC', 'ORIGIN', 'pairs_has_disease']
+nominal_cols = ['SIFT', 'BAM_EDIT', 'PolyPhen']
+# nominal cols more than 20 unique values.
+feature_hashing_cols = ['SYMBOL', 'Amino_acids', 'Codons']
+
+# First of all IMPACT is ordinal column we'll mapping manuelly
+impact_ord_map = {'LOW': 0, 'MODERATE': 1, 'MODIFIER': 2, 'HIGH': 3}
+conflicting_data['IMPACT'] = conflicting_data['IMPACT'].map(impact_ord_map)
+
+# We'll apply OneHotEncoding for nominal_cols with get_dummies. First encode str values into numeric values
+for col in nominal_cols:
+    conflicting_data = pd.concat([conflicting_data, pd.get_dummies(conflicting_data[col], prefix=col + '_')], axis=1)
+    conflicting_data.drop([col], axis=1, inplace=True)
+
+
+def generate_col_names(col, n_features):
+    col_names = list()
+    for i in range(n_features):
+        col_names.append(col + "{}".format(i))
+    return col_names
+
+
+from sklearn.feature_extraction import FeatureHasher
+
+# 24 unique values for CHROM
+fh = FeatureHasher(n_features=4, input_type='string')
+hashed_features = fh.fit_transform(conflicting_data['CHROM'])
+hashed_features = hashed_features.toarray()
+conflicting_data = pd.concat([conflicting_data, pd.DataFrame(hashed_features, columns=generate_col_names('CHROM', 4))],
+                             axis=1)
+
+# 48 unique values for Consequence
+fh = FeatureHasher(n_features=8, input_type='string')
+hashed_features = fh.fit_transform(conflicting_data['Consequence'])
+hashed_features = hashed_features.toarray()
+conflicting_data = pd.concat(
+    [conflicting_data, pd.DataFrame(hashed_features, columns=generate_col_names('Consequence', 8))],
+    axis=1)
+
+conflicting_data.drop(['CHROM', 'Consequence'], axis=1, inplace=True)
+
+# For feature_hashing_cols we have categorical values more than 1000. We'll apply FeatureHasher with n_features = 16
+for col in feature_hashing_cols:
+    n = 8
+    fh = FeatureHasher(n_features=n, input_type='string')
+    hashed_features = fh.fit_transform(conflicting_data[col])
+    hashed_features = hashed_features.toarray()
+    conflicting_data = pd.concat([conflicting_data, pd.DataFrame(hashed_features, columns=generate_col_names(col, n))],
+                                 axis=1)
+    conflicting_data.drop([col], axis=1, inplace=True)
 
 # We can get the count of unique values for each column.
-for col in conflicting_data.columns:
-    print(col + ' ' + str(len(conflicting_data[col].unique())) + ' ', (conflicting_data[col]).dtype)
-    if (col == "PolyPhen" or col == "IMPACT" or col == "SIFT" or col == "STRAND"):
-        print(conflicting_data[col].unique())
-    print()
+# for col in conflicting_data.columns:
+#     print(col+' '+str(len(conflicting_data[col].unique())) +' ',(conflicting_data[col]).dtype)
+#     if(col == "PolyPhen" or col == "IMPACT" or col == "SIFT" or col == "pairs_has_disease" ):
+#         print(conflicting_data[col].unique())
+#     print()
+
 
 # There is natural order in IMPACT -> ['MODERATE' 'MODIFIER' 'LOW' 'HIGH']
 # BAM_EDIT 3 [nan 'OK' 'FAILED'] %51 null %49 OK %1 FAILED
@@ -330,14 +391,54 @@ for col in conflicting_data.columns:
 # SIFT 5 ['tolerated' 'deleterious_low_confidence' 'deleterious' nan 'tolerated_low_confidence']
 
 
-from sklearn import preprocessing
+from sklearn.decomposition import PCA
 
-le = preprocessing.LabelEncoder()
+y = conflicting_data.CLASS
+X = conflicting_data.drop(["CLASS"], axis=1, inplace=False)
 
-# binary_cols = ("ALT","REF")
-# for i in binary_cols:
-#     column = conflicting_data.iloc[:, conflicting_data.columns.get_loc(i):conflicting_data.columns.get_loc(i) + 1].values
-#     conflicting_data.iloc[:, conflicting_data.columns.get_loc(i):conflicting_data.columns.get_loc(i) + 1] = le.fit_transform(column[:,0])
+print("Before sampling:", X.shape, y.shape)
+
+# we will use the implementations provided by the imbalanced-learn Python library, which can be installed via pip as follows:
+# sudo pip install imbalanced-learn
+from imblearn.over_sampling import RandomOverSampler
+from imblearn.over_sampling import SMOTE, ADASYN
+
+# RANDOMOVERSAMPLER %84 ACCURACY 97.5K DATA
+# SMOTE %78 ACCURACY 97.5K DATA
+# ADASYN %78.9 ACCURACY WITH 99K DATA
+ros = ADASYN(random_state=0)
+X_resampled, y_resampled = ros.fit_resample(X, y)
+
+y = y.to_frame()
+ax = sns.countplot(x="CLASS", data=y)
+ax.set(xlabel='CLASS', ylabel='Number of Variants')
+plt.show()
+
+y_resampled = y_resampled.to_frame()
+ax = sns.countplot(x="CLASS", data=y_resampled)
+ax.set(xlabel='CLASS', ylabel='Number of Variants')
+plt.show()
+
+print("After sampling:", X_resampled.shape, y_resampled.shape)
+
+# pca = PCA(n_components=25)
+# pca.fit(X)
+# X = pca.transform(X)
+# We split the data into train(%80) and test(%20)
+X_train, X_test, y_train, y_test = train_test_split(X_resampled, y_resampled, test_size=0.33, random_state=0)
+
+clf = DecisionTreeClassifier(random_state=123)
+clf.fit(X_train, y_train)
+predict = clf.predict(X_test)
+print(X_train.shape, y_train.shape)
+print("{} Accuracy: %".format("SVC"), 100 - mean_absolute_error(y_test, predict) * 100)
+mae = mean_absolute_error(y_test, predict)
+print('MAE: %.3f' % mae)
+
+# rfe = RFE(clf,15)
+# rfe.fit(X_train, y_train)
+# predict = rfe.predict(X_test)
+# print("RFE1 Accuracy: %", 100 - mean_absolute_error(y_test, predict) * 100)
 
 
 print("--- %s seconds ---" % (time.time() - start_time))
