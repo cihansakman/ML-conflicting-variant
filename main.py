@@ -52,10 +52,6 @@ print(conflicting_data.shape)
 
 # ********PREPROCESSING********#
 
-
-# If there is such values consider them as NaN
-conflicting_data = conflicting_data.replace(['-', 'not_specified', 'NULL'], np.nan)
-
 # Percentage of null values for each feature
 # print("** Percentage of null values for each feature **\n")
 # total_num_of_values = conflicting_data.shape[0]
@@ -166,22 +162,48 @@ conflicting_data = makeExonFloat(conflicting_data, 'EXON')
 # convert EXON column to float
 conflicting_data[['EXON']] = conflicting_data[['EXON']].apply(pd.to_numeric)
 
-# #summarize the content
-# conflicting_data.info()
-
+'''
+'Feature' is the ID of 'SYMBOL' therefore we'll drop the 'Feature' column.
+'''
+conflicting_data.drop(['Feature'], axis=1, inplace=True)
 
 '''
 In 'POS','CLNHGVS', and 'CLNVI'(%53 NaN already and have 27k unique values) features are unique for each variant. Therefore we can drop them.
 '''
 conflicting_data.drop(['POS', 'CLNHGVS', 'CLNVI'], axis=1, inplace=True)
 
+# ***IMBALANCED FEATURES****#
+# Imbalanced ile başa çıkmanın bir diğer yolu oversampling. Dene training için.
+'''
+'CLNVC' is stand for varient type. %94 of values are 'single_nucleotide' and the 6% of the values are
+Deletion, Duplication, Inversion, or Insertion. We'll convert this column
+as a binary column whether it is single base-pair substitution or not.
+https://www.ebi.ac.uk/training/online/courses/human-genetic-variation-introduction/what-is-genetic-variation/types-of-genetic-variation/
+Üstteki linkte gerekli bilgi var.
+At the same time we can conclude if the varient type is single base-pair or not from checking the
+length of ALT and REF alleles. If one of the allele includes more than one base-pairs it means that
+the varient type is multi base-pair substitution. Therefore we can drop the ALT and REF columns.
+
+Same situation for ORIGIN
+'''
+# We can check the above situation
+# print(conflicting_data[["ALT","REF","CLNVC"]][conflicting_data["CLNVC"]==1])
+
+
+conflicting_data["CLNVC"] = np.where(conflicting_data["CLNVC"].str.contains("single_nucleotide"), 1, 0)
+conflicting_data["ORIGIN"] = np.where((conflicting_data["ORIGIN"] == 1), 1, 0)
+conflicting_data.drop(['ALT', 'REF'], axis=1, inplace=True)
+
+# if conflicting_data["ORIGIN"] == 1, assign 1, else assign 0.
+
+
 '''
 'Feature_type' ,'BIOTYPE' almost all values are same therefore we'll drop these columns
 '''
 # print("'Feature_type' ,'BIOTYPE' almost all values are same therefore we'll drop these columns")
 
-# print(conflicting_data['BIOTYPE'].value_counts())
-# print(conflicting_data['Feature_type'].value_counts())
+# print(conflicting_data['BIOTYPE'].value_counts()) #65188 protein_coding, 14 misc_RNA
+# print(conflicting_data['Feature_type'].value_counts()) #65172 Transcript, 2 MotiFeature
 # print("**************************")
 conflicting_data.drop(['BIOTYPE', 'Feature_type'], axis=1, inplace=True)
 
@@ -190,19 +212,34 @@ ALT(Alternate allele) and Allele are the same. Then we can drop Allele because i
 '''
 conflicting_data.drop(['Allele'], axis=1, inplace=True)
 
-# We can get the count of unique values for each column.
-# for col in conflicting_data.columns:
-#     print(col+' '+str(len(conflicting_data[col].unique())) +' ',(conflicting_data[col]).dtype)
-#     if(col == "BIOTYPE" or col == "CLNVC" or col == "STRAND" or col == "BAM_EDIT" or col == "SIFT" or col == "Feature_type" or col == "IMPACT" ):
-#         print(conflicting_data[col].unique())
-#     print()
+'''
+'MC' feature is the comma-separated list of molecular consequence in the form of Sequence Ontology and
+'Consequence' feature is the Type of molecular consequence therefore we'll just keep the type of molecular
+consequence and drop the 'MC' feature.
+'''
+conflicting_data.drop(['MC'], axis=1, inplace=True)
 
+'''
+'CLNDISDB' feature is the Tag-value pairs of disease database name and identifier, and
+'CLNDN' feature is the disease name for the identifier. Therefore we'll just keep the
+disease name and drop the 'CLNDISDB'
+'''
+conflicting_data.drop(['CLNDISDB'], axis=1, inplace=True)
+
+# In CLNDN there is not_specified and not_provided seperately. We'll assume not_provided as not_specified.
+conflicting_data['CLNDN'] = conflicting_data['CLNDN'].replace('not_provided', 'not_specified')
+
+# We can get the count of unique values for each column.
+for col in conflicting_data.columns:
+    print(col + ' ' + str(len(conflicting_data[col].unique())) + ' ', (conflicting_data[col]).dtype)
+    # if(col == "BIOTYPE" or col == "CLNVC" or col == "STRAND" or col == "BAM_EDIT" or col == "SIFT" or col == "Feature_type" or col == "SYMBOL" ):
+    # print(conflicting_data[col].unique())
+    print()
 
 # There is natural order in IMPACT -> ['MODERATE' 'MODIFIER' 'LOW' 'HIGH']
-# BAM_EDIT 3 [nan 'OK' 'FAILED']
+# BAM_EDIT 3 [nan 'OK' 'FAILED'] %51 null %49 OK %1 FAILED
 # PolyPhen 5 ['benign' 'probably_damaging' nan 'possibly_damaging' 'unknown']
 # SIFT 5 ['tolerated' 'deleterious_low_confidence' 'deleterious' nan 'tolerated_low_confidence']
-# CLNVC 7  object ['single_nucleotide_variant' 'Deletion' 'Duplication' 'Indel' 'Inversion''Insertion' 'Microsatellite'] %94'ü single_nucleotide
 
 
 # Counts of unique values in feature
@@ -210,7 +247,7 @@ conflicting_data.drop(['Allele'], axis=1, inplace=True)
 # print("**************************")
 # print("**************************")
 # print("**************************")
-# print(conflicting_data['ALT'].value_counts())
+# print(conflicting_data['AF_ESP'].value_counts())
 
 
 # ENCODING
@@ -219,20 +256,21 @@ from sklearn import preprocessing
 le = preprocessing.LabelEncoder()
 
 # Our binary columns are: ("vital_status","gender","disease")
-binary_cols = ("ALT", "REF")
-for i in binary_cols:
-    column = conflicting_data.iloc[:,
-             conflicting_data.columns.get_loc(i):conflicting_data.columns.get_loc(i) + 1].values
-    conflicting_data.iloc[:,
-    conflicting_data.columns.get_loc(i):conflicting_data.columns.get_loc(i) + 1] = le.fit_transform(column[:, 0])
+# binary_cols = ("ALT","REF")
+# for i in binary_cols:
+#     column = conflicting_data.iloc[:, conflicting_data.columns.get_loc(i):conflicting_data.columns.get_loc(i) + 1].values
+#     conflicting_data.iloc[:, conflicting_data.columns.get_loc(i):conflicting_data.columns.get_loc(i) + 1] = le.fit_transform(column[:,0])
+
 
 print("After drop nan cols", conflicting_data.shape, "\n")
 
+# categorical_features = ['CHROM', 'IMPACT', 'STRAND', 'BAM_EDIT', 'SIFT', 'PolyPhen',
+#                         'BLOSUM62','Consequence']
 
 
+# summarize the content
+conflicting_data.info()
 
-
-
-
+##DEALING WITH MISSING VALUES##
 
 
