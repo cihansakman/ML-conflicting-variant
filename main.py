@@ -43,6 +43,10 @@ import pandas as pd
 import numpy as np
 import warnings
 
+import time
+
+start_time = time.time()
+
 warnings.filterwarnings("ignore")
 
 # LOADING DATASET
@@ -179,7 +183,6 @@ conflicting_data.drop(['POS', 'CLNHGVS', 'CLNVI'], axis=1, inplace=True)
 Deletion, Duplication, Inversion, or Insertion. We'll convert this column
 as a binary column whether it is single base-pair substitution or not.
 https://www.ebi.ac.uk/training/online/courses/human-genetic-variation-introduction/what-is-genetic-variation/types-of-genetic-variation/
-Üstteki linkte gerekli bilgi var.
 At the same time we can conclude if the varient type is single base-pair or not from checking the
 length of ALT and REF alleles. If one of the allele includes more than one base-pairs it means that
 the varient type is multi base-pair substitution. Therefore we can drop the ALT and REF columns.
@@ -229,11 +232,96 @@ conflicting_data.drop(['CLNDISDB'], axis=1, inplace=True)
 # In CLNDN there is not_specified and not_provided seperately. We'll assume not_provided as not_specified.
 conflicting_data['CLNDN'] = conflicting_data['CLNDN'].replace('not_provided', 'not_specified')
 
+# We'll make CLNDN feature as binary. Whether Tag-value pairs have disease or not. If it has disease yes, else no.
+conflicting_data["pairs_has_disease"] = np.where((conflicting_data["CLNDN"] == 'not_specified'), 'no', 'yes')
+conflicting_data.drop(['CLNDN'], axis=1, inplace=True)
+
+# Counts of unique values in feature
+# print(conflicting_data['REF'].value_counts())
+# print("**************************")
+# print(conflicting_data['AF_ESP'].value_counts())
+
+
+print("After drop nan cols", conflicting_data.shape, "\n")
+
+##DEALING WITH MISSING VALUES##
+# print(conflicting_data[["SYMBOL"]][conflicting_data["SYMBOL"].isnull()])
+'''
+In SYMBOL there is a missing gene. We'll call this gene X.
+'''
+conflicting_data['SYMBOL'] = conflicting_data['SYMBOL'].replace(np.nan, 'X')
+
+# cDNA
+'''
+cDNA can be described as DNA without all the necessary noncoding regions. That's mean
+if there is no EXON we can't talk about the cDNA position. There is an exception, lack of 
+EXON and INTRON we have cDNA position. Therefore we'll fill the NaN values as -1
+'''
+conflicting_data['cDNA_position'] = conflicting_data['cDNA_position'].replace(np.nan, -1)
+
+'''
+CADD is a tool for scoring the deleteriousness of single nucleotide variants as well as insertion/deletions variants in the human genome.
+All the NaN values in 'CADD_PHRED' belongs to non-single nucleotide varients. That's mean there is no CADD_PHRED information
+for non-single nucleotide varient. We'll fill the values with -1.
+'''
+# print(conflicting_data[["CADD_PHRED","CLNVC"]][conflicting_data["CADD_PHRED"].isnull() & conflicting_data["CADD_PHRED"] == 1]) #it'll return empty array
+conflicting_data['CADD_PHRED'] = conflicting_data['CADD_PHRED'].replace(np.nan, -1)
+
+'''
+Fill EXON NaN values with 0(it means there is no EXON)
+'''
+conflicting_data['EXON'] = conflicting_data['EXON'].replace(np.nan, 0)
+
+'''
+AminoAcids and Codons are only given if the varient affects protein-coding sequence.
+'''
+conflicting_data[['Amino_acids', 'Codons']] = conflicting_data[['Amino_acids', 'Codons']].replace(np.nan, "not-affect")
+
+'''
+Keep BAM_EDIT, SIFT, PolyPhen as unknown
+'''
+conflicting_data[['BAM_EDIT', 'SIFT', 'PolyPhen']] = conflicting_data[['BAM_EDIT', 'SIFT', 'PolyPhen']].replace(np.nan,
+                                                                                                                "unknown")
+
+'''
+BLOSUM matrices are used to score alignments between evolutionarily divergent protein sequences.
+BL0SUM62 is a categorical feature with integer values between -3 to 3. There is no 0. Fill NaN with 0
+'''
+conflicting_data['BLOSUM62'] = conflicting_data['BLOSUM62'].replace(np.nan, 0)
+
+'''
+the DNA STRAND (1 or -1) on which the transcript/feature lies. There are 14 NaN values. Keep them as 0
+'''
+conflicting_data['STRAND'] = conflicting_data['STRAND'].replace(np.nan, 0)
+
+'''
+Fill LoFtool with the mean of feature.
+'''
+# print("Mean of LoFtool",conflicting_data['LoFtool'].mean())
+from sklearn.impute import SimpleImputer
+
+imr = SimpleImputer(missing_values=np.nan, strategy='mean')
+imr = imr.fit(conflicting_data[['LoFtool']])
+conflicting_data['LoFtool'] = imr.transform(conflicting_data[['LoFtool']]).ravel()
+
+# Now we don't have any NaN values.
+
+
+# summarize the content
+conflicting_data.info()
+
+# ENCODING
+
+
+# categorical_features = ['CHROM', 'IMPACT', 'STRAND', 'BAM_EDIT', 'SIFT', 'PolyPhen',
+#                         'BLOSUM62','Consequence']
+
+
 # We can get the count of unique values for each column.
 for col in conflicting_data.columns:
     print(col + ' ' + str(len(conflicting_data[col].unique())) + ' ', (conflicting_data[col]).dtype)
-    # if(col == "BIOTYPE" or col == "CLNVC" or col == "STRAND" or col == "BAM_EDIT" or col == "SIFT" or col == "Feature_type" or col == "SYMBOL" ):
-    # print(conflicting_data[col].unique())
+    if (col == "PolyPhen" or col == "IMPACT" or col == "SIFT" or col == "STRAND"):
+        print(conflicting_data[col].unique())
     print()
 
 # There is natural order in IMPACT -> ['MODERATE' 'MODIFIER' 'LOW' 'HIGH']
@@ -242,35 +330,14 @@ for col in conflicting_data.columns:
 # SIFT 5 ['tolerated' 'deleterious_low_confidence' 'deleterious' nan 'tolerated_low_confidence']
 
 
-# Counts of unique values in feature
-# print(conflicting_data['REF'].value_counts())
-# print("**************************")
-# print("**************************")
-# print("**************************")
-# print(conflicting_data['AF_ESP'].value_counts())
-
-
-# ENCODING
 from sklearn import preprocessing
 
 le = preprocessing.LabelEncoder()
 
-# Our binary columns are: ("vital_status","gender","disease")
 # binary_cols = ("ALT","REF")
 # for i in binary_cols:
 #     column = conflicting_data.iloc[:, conflicting_data.columns.get_loc(i):conflicting_data.columns.get_loc(i) + 1].values
 #     conflicting_data.iloc[:, conflicting_data.columns.get_loc(i):conflicting_data.columns.get_loc(i) + 1] = le.fit_transform(column[:,0])
 
 
-print("After drop nan cols", conflicting_data.shape, "\n")
-
-# categorical_features = ['CHROM', 'IMPACT', 'STRAND', 'BAM_EDIT', 'SIFT', 'PolyPhen',
-#                         'BLOSUM62','Consequence']
-
-
-# summarize the content
-conflicting_data.info()
-
-##DEALING WITH MISSING VALUES##
-
-
+print("--- %s seconds ---" % (time.time() - start_time))
