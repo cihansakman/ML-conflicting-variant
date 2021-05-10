@@ -72,7 +72,7 @@ conflicting_data = conflicting_data.loc[:, conflicting_data.isnull().mean() < .9
 ''' 
 In cDNA_position, CDS_position, Protein_position values are int but type of features are Object. 
 Because there is some approximation such as 1331-1332 for relative positions. 
-We'll take the first one because they are already so close to each others
+We'll take the valid one because they are already so close to each others
 '''
 
 
@@ -105,7 +105,7 @@ conflicting_data[['cDNA_position', 'CDS_position', 'Protein_position']] = confli
     ['cDNA_position', 'CDS_position', 'Protein_position']].apply(pd.to_numeric)
 
 '''
-In CHROM collum there is values between 1-22 and some X and MT values. X means chromosome X and MT means mitochondrial chromosome.
+In CHROM column there are values between 1-22 and some X and MT values. X means chromosome X and MT means mitochondrial chromosome.
 There is no Y chromosome therefore we can assume that our patient is a woman. We'll keep X as 23 and MT as 24. Then convert it's type into numeric
 '''
 
@@ -398,10 +398,18 @@ X = conflicting_data.drop(["CLASS"], axis=1, inplace=False)
 
 print("Before sampling:", X.shape, y.shape)
 
-# we will use the implementations provided by the imbalanced-learn Python library, which can be installed via pip as follows:
-# sudo pip install imbalanced-learn
+'''
+we will use the implementations provided by the imbalanced-learn Python library, which can be installed via pip as follows:
+->sudo pip install imbalanced-learn
+'''
 from imblearn.over_sampling import RandomOverSampler
 from imblearn.over_sampling import SMOTE, ADASYN
+from imblearn.under_sampling import RandomUnderSampler
+from sklearn.metrics import roc_auc_score
+from sklearn.metrics import average_precision_score
+from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
+from sklearn.ensemble import GradientBoostingClassifier
+from sklearn.metrics import roc_curve, auc
 
 # RANDOMOVERSAMPLER %84 ACCURACY 97.5K DATA
 # SMOTE %78 ACCURACY 97.5K DATA
@@ -409,31 +417,89 @@ from imblearn.over_sampling import SMOTE, ADASYN
 ros = ADASYN(random_state=0)
 X_resampled, y_resampled = ros.fit_resample(X, y)
 
-y = y.to_frame()
-ax = sns.countplot(x="CLASS", data=y)
+# y = y.to_frame()
+# ax = sns.countplot(x="CLASS", data=y)
+# ax.set(xlabel='CLASS', ylabel='Number of Variants')
+# plt.show()
+
+# y_resampled = y_resampled.to_frame()
+# ax = sns.countplot(x="CLASS", data=y_resampled)
+# ax.set(xlabel='CLASS', ylabel='Number of Variants')
+# plt.show()
+
+# print("After sampling:",X_resampled.shape, y_resampled.shape)
+
+
+# We split the data into train(%75) and test(%25)
+X_train, X_test, y_train, y_test = train_test_split(X_resampled, y_resampled, test_size=0.25, random_state=0)
+
+y_train_raw = y_train.to_frame()
+ax = sns.countplot(x="CLASS", data=y_train_raw)
 ax.set(xlabel='CLASS', ylabel='Number of Variants')
+plt.title("y_train")
 plt.show()
 
-y_resampled = y_resampled.to_frame()
-ax = sns.countplot(x="CLASS", data=y_resampled)
-ax.set(xlabel='CLASS', ylabel='Number of Variants')
+y_test_raw = y_test.to_frame()
+ax = sns.countplot(x="CLASS", data=y_test_raw)
+ax.set(xlabel='CLASS', ylabel='Number of Variants', label="y_test")
+plt.title("y_test")
 plt.show()
+
+# ros = RandomUnderSampler(random_state=0,sampling_strategy=0.8)
+# X_resampled, y_resampled = ros.fit_resample(X_train, y_train)
 
 print("After sampling:", X_resampled.shape, y_resampled.shape)
+from sklearn.metrics import f1_score
 
-# pca = PCA(n_components=25)
-# pca.fit(X)
-# X = pca.transform(X)
-# We split the data into train(%80) and test(%20)
-X_train, X_test, y_train, y_test = train_test_split(X_resampled, y_resampled, test_size=0.33, random_state=0)
+machine_learning_algorithms = (GradientBoostingClassifier(n_estimators=100, learning_rate=0.1,
+                                                          max_depth=7, random_state=0),
+                               LogisticRegression(solver='liblinear'),
+                               KNeighborsClassifier(),
+                               RandomForestClassifier(max_depth=6), DecisionTreeClassifier(),
+                               )
+ml_names = ("GradientBoost", "Logistic Regression", "KNN", "RandomForest", "DecisionTree")
 
-clf = DecisionTreeClassifier(random_state=123)
-clf.fit(X_train, y_train)
-predict = clf.predict(X_test)
-print(X_train.shape, y_train.shape)
-print("{} Accuracy: %".format("SVC"), 100 - mean_absolute_error(y_test, predict) * 100)
-mae = mean_absolute_error(y_test, predict)
-print('MAE: %.3f' % mae)
+for ml, ml_name in zip(machine_learning_algorithms, ml_names):
+    clf = ml
+    clf.fit(X_train, y_train)
+    predict = clf.predict(X_test)
+    # print("{} Accuracy: %".format("SVC"), 100 - mean_absolute_error(y_test, predict) * 100)
+    # mae = mean_absolute_error(y_test, predict)
+    # print('MAE: %.3f' % mae)
+    # print("{} Accuracy: %".format("AUC"), roc_auc_score(y_test, predict) * 100)
+    print("Classification Report : for:", ml_name, "\n", classification_report(y_test, predict))
+    false_positive_rate, true_positive_rate, thresholds = roc_curve(y_test, predict)
+    roc_auc = auc(false_positive_rate, true_positive_rate)
+    # roc_auc = roc_auc_score(y_test, predict)
+    print("AUC:", roc_auc)
+    fpr, tpr, _ = roc_curve(y_test, predict)
+    # plot the roc curve for the model
+    plt.plot(fpr, tpr, label='{} AUC = {:.2f}'.format(ml_name, roc_auc))
+    plt.plot([0, 1], [0, 1], 'r--')
+
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
+    plt.legend(loc='lower right')
+    plt.show()
+
+# clf = GradientBoostingClassifier()
+# clf.fit(X_train, y_train)
+# predict = clf.predict(X_test)
+# print(X_train.shape, y_train.shape)
+# print("{} Accuracy: %".format("SVC"), 100 - mean_absolute_error(y_test, predict) * 100)
+# print("{} Accuracy: %".format("AUC"), roc_auc_score(y_test, predict) * 100)
+# print('Average precision-recall score: {0:0.2f}'.format(average_precision_score(y_test, predict)))
+# print( "Classification Report :\n ", classification_report(y_test, predict))
+
+# from sklearn.metrics import confusion_matrix, accuracy_score, classification_report, precision_score, f1_score, roc_auc_score
+# from sklearn.linear_model import LogisticRegression
+# from sklearn.tree import DecisionTreeClassifier
+# from sklearn.ensemble import RandomForestClassifier
+# from sklearn.metrics import precision_recall_fscore_support as score
+# precision_lr, recall_lr = (round(float(x),2) for x in list(score(y_test,
+#                                                                     predict,
+#                                                                     average='weighted'))[:-2])
+
 
 # rfe = RFE(clf,15)
 # rfe.fit(X_train, y_train)
