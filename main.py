@@ -56,11 +56,6 @@ print(conflicting_data.shape)
 
 # ********PREPROCESSING********#
 
-# Percentage of null values for each feature
-# print("** Percentage of null values for each feature **\n")
-# total_num_of_values = conflicting_data.shape[0]
-# print(((conflicting_data.isnull().sum()) / total_num_of_values ) * 100 )
-
 
 print("Before drop nan cols", conflicting_data.shape)
 
@@ -126,10 +121,6 @@ nan value.
 '''
 conflicting_data.drop(['CDS_position', 'Protein_position'], axis=1, inplace=True)
 
-# #Correlation between CAD_RAW and CADD_PHRED is 0.96 then we'll drop one of them.
-# conflicting_data.drop(["CADD_RAW"], axis=1, inplace=True)
-
-
 '''
 For EXON and INTRON their NaN ratios are parallel. The percentage of NaN values for INTRON is %86.4,
 and the percentage of NaN values for EXON is %13.6. Therefore we'll fill the NaN values of EXON with
@@ -169,7 +160,7 @@ conflicting_data = makeExonFloat(conflicting_data, 'EXON')
 conflicting_data[['EXON']] = conflicting_data[['EXON']].apply(pd.to_numeric)
 
 '''
-'Feature' is the ID of 'SYMBOL' therefore we'll drop the 'Feature' column.
+'Feature' is the ID of 'SYMBOL' therefore we'll drop the 'Feature' column and use the SYMBOL.
 '''
 conflicting_data.drop(['Feature'], axis=1, inplace=True)
 
@@ -178,8 +169,6 @@ In 'POS','CLNHGVS', and 'CLNVI'(%53 NaN already and have 27k unique values) feat
 '''
 conflicting_data.drop(['POS', 'CLNHGVS', 'CLNVI'], axis=1, inplace=True)
 
-# ***IMBALANCED FEATURES****#
-# Imbalanced ile başa çıkmanın bir diğer yolu oversampling. Dene training için.
 '''
 'CLNVC' is stand for varient type. %94 of values are 'single_nucleotide' and the 6% of the values are
 Deletion, Duplication, Inversion, or Insertion. We'll convert this column
@@ -196,21 +185,9 @@ Same situation for ORIGIN
 
 
 conflicting_data["CLNVC"] = np.where(conflicting_data["CLNVC"].str.contains("single_nucleotide"), 1, 0)
+# if conflicting_data["ORIGIN"] == 1, assign 1, else assign 0.
 conflicting_data["ORIGIN"] = np.where((conflicting_data["ORIGIN"] == 1), 1, 0)
 conflicting_data.drop(['ALT', 'REF'], axis=1, inplace=True)
-
-# if conflicting_data["ORIGIN"] == 1, assign 1, else assign 0.
-
-
-'''
-'Feature_type' ,'BIOTYPE' almost all values are same therefore we'll drop these columns
-'''
-# print("'Feature_type' ,'BIOTYPE' almost all values are same therefore we'll drop these columns")
-
-# print(conflicting_data['BIOTYPE'].value_counts()) #65188 protein_coding, 14 misc_RNA
-# print(conflicting_data['Feature_type'].value_counts()) #65172 Transcript, 2 MotiFeature
-# print("**************************")
-conflicting_data.drop(['BIOTYPE', 'Feature_type'], axis=1, inplace=True)
 
 '''
 ALT(Alternate allele) and Allele are the same. Then we can drop Allele because it has some null values but ALT doesn't
@@ -271,6 +248,11 @@ conflicting_data['CADD_PHRED'] = conflicting_data['CADD_PHRED'].replace(np.nan, 
 conflicting_data['CADD_RAW'] = conflicting_data['CADD_RAW'].replace(np.nan, -1)
 
 '''
+There are few NaN for Feature_type we'll keep them as unknown
+'''
+conflicting_data['Feature_type'] = conflicting_data['Feature_type'].replace(np.nan, 'unknown')
+
+'''
 Fill EXON NaN values with 0(it means there is no EXON)
 '''
 conflicting_data['EXON'] = conflicting_data['EXON'].replace(np.nan, 0)
@@ -327,7 +309,7 @@ conflicting_data.info()
 #                         'BLOSUM62','Consequence']
 
 binary_cols = ['CLNVC', 'ORIGIN', 'pairs_has_disease']
-nominal_cols = ['SIFT', 'BAM_EDIT', 'PolyPhen']
+nominal_cols = ['SIFT', 'BAM_EDIT', 'PolyPhen', 'BIOTYPE', 'Feature_type']
 # nominal cols more than 20 unique values.
 feature_hashing_cols = ['SYMBOL', 'Amino_acids', 'Codons']
 
@@ -358,11 +340,11 @@ conflicting_data = pd.concat([conflicting_data, pd.DataFrame(hashed_features, co
                              axis=1)
 
 # 48 unique values for Consequence
-fh = FeatureHasher(n_features=8, input_type='string')
+fh = FeatureHasher(n_features=16, input_type='string')
 hashed_features = fh.fit_transform(conflicting_data['Consequence'])
 hashed_features = hashed_features.toarray()
 conflicting_data = pd.concat(
-    [conflicting_data, pd.DataFrame(hashed_features, columns=generate_col_names('Consequence', 8))],
+    [conflicting_data, pd.DataFrame(hashed_features, columns=generate_col_names('Consequence', 16))],
     axis=1)
 
 conflicting_data.drop(['CHROM', 'Consequence'], axis=1, inplace=True)
@@ -398,10 +380,20 @@ X = conflicting_data.drop(["CLASS"], axis=1, inplace=False)
 
 print("Before sampling:", X.shape, y.shape)
 
-'''
-we will use the implementations provided by the imbalanced-learn Python library, which can be installed via pip as follows:
-->sudo pip install imbalanced-learn
-'''
+rnd_clf = RandomForestClassifier(n_estimators=100, n_jobs=-1, random_state=42)
+rnd_clf.fit(X, y)
+
+features = X.columns
+importances = rnd_clf.feature_importances_
+indices = np.argsort(importances)
+
+plt.figure(figsize=(20, 10))
+feat_importances = pd.Series(importances, index=features)
+feat_importances.nlargest(len(indices)).plot(kind='bar', color='#79CCB3');
+plt.show()
+
+# we will use the implementations provided by the imbalanced-learn Python library, which can be installed via pip as follows:
+# sudo pip install imbalanced-learn
 from imblearn.over_sampling import RandomOverSampler
 from imblearn.over_sampling import SMOTE, ADASYN
 from imblearn.under_sampling import RandomUnderSampler
@@ -414,8 +406,11 @@ from sklearn.metrics import roc_curve, auc
 # RANDOMOVERSAMPLER %84 ACCURACY 97.5K DATA
 # SMOTE %78 ACCURACY 97.5K DATA
 # ADASYN %78.9 ACCURACY WITH 99K DATA
-ros = ADASYN(random_state=0)
-X_resampled, y_resampled = ros.fit_resample(X, y)
+# ros = ADASYN(random_state=0)
+# pca = PCA(n_components=15)
+# X = pca.fit_transform(X)
+# ros = RandomUnderSampler(random_state=0,sampling_strategy=0.8)
+# X_resampled, y_resampled = ros.fit_resample(X, y)
 
 # y = y.to_frame()
 # ax = sns.countplot(x="CLASS", data=y)
@@ -431,7 +426,10 @@ X_resampled, y_resampled = ros.fit_resample(X, y)
 
 
 # We split the data into train(%75) and test(%25)
-X_train, X_test, y_train, y_test = train_test_split(X_resampled, y_resampled, test_size=0.25, random_state=0)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=0)
+
+ros = RandomUnderSampler(random_state=0, sampling_strategy=0.8)
+X_train, y_train = ros.fit_resample(X_train, y_train)
 
 y_train_raw = y_train.to_frame()
 ax = sns.countplot(x="CLASS", data=y_train_raw)
@@ -445,28 +443,27 @@ ax.set(xlabel='CLASS', ylabel='Number of Variants', label="y_test")
 plt.title("y_test")
 plt.show()
 
-# ros = RandomUnderSampler(random_state=0,sampling_strategy=0.8)
-# X_resampled, y_resampled = ros.fit_resample(X_train, y_train)
-
-print("After sampling:", X_resampled.shape, y_resampled.shape)
+# print("After sampling:",X_resampled.shape, y_resampled.shape)
 from sklearn.metrics import f1_score
 
 machine_learning_algorithms = (GradientBoostingClassifier(n_estimators=100, learning_rate=0.1,
                                                           max_depth=7, random_state=0),
                                LogisticRegression(solver='liblinear'),
-                               KNeighborsClassifier(),
-                               RandomForestClassifier(max_depth=6), DecisionTreeClassifier(),
+                               RandomForestClassifier(n_estimators=100, oob_score=True, n_jobs=-1, random_state=50,
+                                                      max_features="auto", min_samples_leaf=50),
+                               DecisionTreeClassifier(max_depth=7),
                                )
-ml_names = ("GradientBoost", "Logistic Regression", "KNN", "RandomForest", "DecisionTree")
+ml_names = ("GradientBoost", "Logistic Regression", "RandomForest", "DecisionTree")
 
 for ml, ml_name in zip(machine_learning_algorithms, ml_names):
     clf = ml
     clf.fit(X_train, y_train)
     predict = clf.predict(X_test)
     # print("{} Accuracy: %".format("SVC"), 100 - mean_absolute_error(y_test, predict) * 100)
-    # mae = mean_absolute_error(y_test, predict)
-    # print('MAE: %.3f' % mae)
-    # print("{} Accuracy: %".format("AUC"), roc_auc_score(y_test, predict) * 100)
+    print("{} Accuracy: %".format("Accuracy score:"), accuracy_score(y_test, predict) * 100)
+    mae = mean_absolute_error(y_test, predict)
+    print('MAE: %.3f' % mae)
+    print("{} Accuracy: %".format("ROC"), roc_auc_score(y_test, predict) * 100)
     print("Classification Report : for:", ml_name, "\n", classification_report(y_test, predict))
     false_positive_rate, true_positive_rate, thresholds = roc_curve(y_test, predict)
     roc_auc = auc(false_positive_rate, true_positive_rate)
@@ -481,6 +478,7 @@ for ml, ml_name in zip(machine_learning_algorithms, ml_names):
     plt.ylabel('True Positive Rate')
     plt.legend(loc='lower right')
     plt.show()
+    print("*********************")
 
 # clf = GradientBoostingClassifier()
 # clf.fit(X_train, y_train)
@@ -505,6 +503,9 @@ for ml, ml_name in zip(machine_learning_algorithms, ml_names):
 # rfe.fit(X_train, y_train)
 # predict = rfe.predict(X_test)
 # print("RFE1 Accuracy: %", 100 - mean_absolute_error(y_test, predict) * 100)
+
+
+####UNDERSAMPLING YAPTIM SADECE TRAIN DATASI IÇIN ORDAN DEVAMKE
 
 
 print("--- %s seconds ---" % (time.time() - start_time))
