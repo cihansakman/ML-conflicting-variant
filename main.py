@@ -292,9 +292,6 @@ conflicting_data['LoFtool'] = imr.transform(conflicting_data[['LoFtool']]).ravel
 # Now we don't have any NaN values.
 
 
-# summarize the content
-conflicting_data.info()
-
 # correlation matrix for data
 # corrmat = conflicting_data.corr()
 # f, ax = plt.subplots(figsize=(12, 9))
@@ -304,18 +301,40 @@ conflicting_data.info()
 
 # ENCODING
 
+# We can get the count of unique values for each column.
+for col in conflicting_data.columns:
+    print(col + ' ' + str(len(conflicting_data[col].unique())) + ' ', (conflicting_data[col]).dtype)
+    if (col == "PolyPhen" or col == "IMPACT" or col == "SIFT" or col == "pairs_has_disease"):
+        print(conflicting_data[col].unique())
+    print()
+
+# There is natural order in IMPACT -> ['MODERATE' 'MODIFIER' 'LOW' 'HIGH']
+# BAM_EDIT 3 [nan 'OK' 'FAILED'] %51 null %49 OK %1 FAILED
+# PolyPhen 5 ['benign' 'probably_damaging' nan 'possibly_damaging' 'unknown']
+# SIFT 5 ['tolerated' 'deleterious_low_confidence' 'deleterious' nan 'tolerated_low_confidence']
+
 
 # categorical_features = ['CHROM', 'IMPACT', 'STRAND', 'BAM_EDIT', 'SIFT', 'PolyPhen',
 #                         'BLOSUM62','Consequence']
 
 binary_cols = ['CLNVC', 'ORIGIN', 'pairs_has_disease']
-nominal_cols = ['SIFT', 'BAM_EDIT', 'PolyPhen', 'BIOTYPE', 'Feature_type']
+# nominal_cols = ['SIFT','BAM_EDIT', 'PolyPhen','BIOTYPE','Feature_type']
+nominal_cols = ['BAM_EDIT', 'BIOTYPE', 'Feature_type']
 # nominal cols more than 20 unique values.
 feature_hashing_cols = ['SYMBOL', 'Amino_acids', 'Codons']
 
-# First of all IMPACT is ordinal column we'll mapping manuelly
+# First of all IMPACT is ordinal column we'll mapping manually
 impact_ord_map = {'LOW': 0, 'MODERATE': 1, 'MODIFIER': 2, 'HIGH': 3}
 conflicting_data['IMPACT'] = conflicting_data['IMPACT'].map(impact_ord_map)
+
+# First of all SIFT is ordinal column we'll mapping manually
+sift_ord_map = {'tolerated': 0, 'tolerated_low_confidence': 1, 'unknown': 2, 'deleterious_low_confidence': 3,
+                'deleterious': 4}
+conflicting_data['SIFT'] = conflicting_data['SIFT'].map(sift_ord_map)
+
+# First of all PolyPhen is ordinal column we'll mapping manually
+polyphen_ord_map = {'benign': 0, 'unknown': 1, 'probably_damaging': 2, 'possibly_damaging': 3}
+conflicting_data['PolyPhen'] = conflicting_data['PolyPhen'].map(polyphen_ord_map)
 
 # We'll apply OneHotEncoding for nominal_cols with get_dummies. First encode str values into numeric values
 for col in nominal_cols:
@@ -340,18 +359,18 @@ conflicting_data = pd.concat([conflicting_data, pd.DataFrame(hashed_features, co
                              axis=1)
 
 # 48 unique values for Consequence
-fh = FeatureHasher(n_features=16, input_type='string')
+fh = FeatureHasher(n_features=4, input_type='string')
 hashed_features = fh.fit_transform(conflicting_data['Consequence'])
 hashed_features = hashed_features.toarray()
 conflicting_data = pd.concat(
-    [conflicting_data, pd.DataFrame(hashed_features, columns=generate_col_names('Consequence', 16))],
+    [conflicting_data, pd.DataFrame(hashed_features, columns=generate_col_names('Consequence', 4))],
     axis=1)
 
 conflicting_data.drop(['CHROM', 'Consequence'], axis=1, inplace=True)
 
 # For feature_hashing_cols we have categorical values more than 1000. We'll apply FeatureHasher with n_features = 16
 for col in feature_hashing_cols:
-    n = 8
+    n = 4
     fh = FeatureHasher(n_features=n, input_type='string')
     hashed_features = fh.fit_transform(conflicting_data[col])
     hashed_features = hashed_features.toarray()
@@ -359,19 +378,7 @@ for col in feature_hashing_cols:
                                  axis=1)
     conflicting_data.drop([col], axis=1, inplace=True)
 
-# We can get the count of unique values for each column.
-# for col in conflicting_data.columns:
-#     print(col+' '+str(len(conflicting_data[col].unique())) +' ',(conflicting_data[col]).dtype)
-#     if(col == "PolyPhen" or col == "IMPACT" or col == "SIFT" or col == "pairs_has_disease" ):
-#         print(conflicting_data[col].unique())
-#     print()
-
-
-# There is natural order in IMPACT -> ['MODERATE' 'MODIFIER' 'LOW' 'HIGH']
-# BAM_EDIT 3 [nan 'OK' 'FAILED'] %51 null %49 OK %1 FAILED
-# PolyPhen 5 ['benign' 'probably_damaging' nan 'possibly_damaging' 'unknown']
-# SIFT 5 ['tolerated' 'deleterious_low_confidence' 'deleterious' nan 'tolerated_low_confidence']
-
+# buradan
 
 from sklearn.decomposition import PCA
 
@@ -403,30 +410,13 @@ from sklearn.metrics import classification_report, confusion_matrix, accuracy_sc
 from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.metrics import roc_curve, auc
 
-# RANDOMOVERSAMPLER %84 ACCURACY 97.5K DATA
-# SMOTE %78 ACCURACY 97.5K DATA
-# ADASYN %78.9 ACCURACY WITH 99K DATA
 # ros = ADASYN(random_state=0)
-# pca = PCA(n_components=15)
-# X = pca.fit_transform(X)
 # ros = RandomUnderSampler(random_state=0,sampling_strategy=0.8)
 # X_resampled, y_resampled = ros.fit_resample(X, y)
 
-# y = y.to_frame()
-# ax = sns.countplot(x="CLASS", data=y)
-# ax.set(xlabel='CLASS', ylabel='Number of Variants')
-# plt.show()
-
-# y_resampled = y_resampled.to_frame()
-# ax = sns.countplot(x="CLASS", data=y_resampled)
-# ax.set(xlabel='CLASS', ylabel='Number of Variants')
-# plt.show()
-
-# print("After sampling:",X_resampled.shape, y_resampled.shape)
-
 
 # We split the data into train(%75) and test(%25)
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=0)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.25, random_state=0)
 
 ros = RandomUnderSampler(random_state=0, sampling_strategy=0.8)
 X_train, y_train = ros.fit_resample(X_train, y_train)
@@ -452,32 +442,54 @@ machine_learning_algorithms = (GradientBoostingClassifier(n_estimators=100, lear
                                RandomForestClassifier(n_estimators=100, oob_score=True, n_jobs=-1, random_state=50,
                                                       max_features="auto", min_samples_leaf=50),
                                DecisionTreeClassifier(max_depth=7),
+
                                )
 ml_names = ("GradientBoost", "Logistic Regression", "RandomForest", "DecisionTree")
 
 for ml, ml_name in zip(machine_learning_algorithms, ml_names):
     clf = ml
     clf.fit(X_train, y_train)
+
+    y_preds = clf.predict_proba(X_test)
+    preds = y_preds[:, 1]  # pred probability
     predict = clf.predict(X_test)
-    # print("{} Accuracy: %".format("SVC"), 100 - mean_absolute_error(y_test, predict) * 100)
-    print("{} Accuracy: %".format("Accuracy score:"), accuracy_score(y_test, predict) * 100)
-    mae = mean_absolute_error(y_test, predict)
-    print('MAE: %.3f' % mae)
-    print("{} Accuracy: %".format("ROC"), roc_auc_score(y_test, predict) * 100)
-    print("Classification Report : for:", ml_name, "\n", classification_report(y_test, predict))
-    false_positive_rate, true_positive_rate, thresholds = roc_curve(y_test, predict)
-    roc_auc = auc(false_positive_rate, true_positive_rate)
-    # roc_auc = roc_auc_score(y_test, predict)
-    print("AUC:", roc_auc)
-    fpr, tpr, _ = roc_curve(y_test, predict)
-    # plot the roc curve for the model
-    plt.plot(fpr, tpr, label='{} AUC = {:.2f}'.format(ml_name, roc_auc))
+    fpr, tpr, _ = roc_curve(y_test, preds)
+
+    auc_score = auc(fpr, tpr)
+
+    plt.subplots(figsize=(8, 6))
+    plt.title('ROC Curve')
+    plt.plot(fpr, tpr, label='{} AUC = {:.2f}'.format(ml_name, auc_score))
     plt.plot([0, 1], [0, 1], 'r--')
 
-    plt.xlabel('False Positive Rate')
     plt.ylabel('True Positive Rate')
+    plt.xlabel('False Positive Rate')
+
     plt.legend(loc='lower right')
     plt.show()
+
+    # clf = ml
+    # clf.fit(X_train, y_train)
+    # predict = clf.predict(X_test)
+    # # print("{} Accuracy: %".format("SVC"), 100 - mean_absolute_error(y_test, predict) * 100)
+    print("{} Accuracy: %".format("Accuracy score:"), accuracy_score(y_test, predict) * 100)
+    # mae = mean_absolute_error(y_test, predict)
+    # print('MAE: %.3f' % mae)
+    print("{} Accuracy: %".format("ROC"), roc_auc_score(y_test, predict) * 100)
+    print("Classification Report : for:", ml_name, "\n", classification_report(y_test, predict))
+    # false_positive_rate, true_positive_rate, thresholds = roc_curve(y_test, predict)
+    # roc_auc = auc(false_positive_rate, true_positive_rate)
+    # # roc_auc = roc_auc_score(y_test, predict)
+    # print("AUC:",roc_auc)
+    # fpr, tpr, _ = roc_curve(y_test, predict)
+    # # plot the roc curve for the model
+    # plt.plot(fpr, tpr, label='{} AUC = {:.2f}'.format(ml_name,roc_auc))
+    # plt.plot([0,1],[0,1],'r--')
+
+    # plt.xlabel('False Positive Rate')
+    # plt.ylabel('True Positive Rate')
+    # plt.legend(loc='lower right')
+    # plt.show()
     print("*********************")
 
 # clf = GradientBoostingClassifier()
