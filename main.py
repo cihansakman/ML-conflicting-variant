@@ -8,41 +8,20 @@ Created on Thu May  6 21:46:33 2021
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-from scipy import stats
-from scipy.stats import randint
 import math
 
 # prep
 from sklearn.model_selection import train_test_split
-from sklearn import preprocessing
-from sklearn.datasets import make_classification
-from sklearn.preprocessing import binarize, LabelEncoder, MinMaxScaler
 
 # models
 from sklearn.linear_model import LogisticRegression
 from sklearn.tree import DecisionTreeClassifier
-from sklearn.ensemble import RandomForestClassifier, ExtraTreesClassifier
-from sklearn.neural_network import MLPClassifier
-from sklearn.svm import SVC
-
-# Validation libraries
-from sklearn import metrics
-from sklearn.metrics import accuracy_score, mean_squared_error, precision_recall_curve
-from sklearn.model_selection import cross_val_score
-from sklearn.metrics import mean_absolute_error
-from sklearn.feature_selection import RFE
-
-# Bagging
-from sklearn.neighbors import KNeighborsClassifier
-
-# Naive bayes
-from sklearn.naive_bayes import GaussianNB
+from sklearn.ensemble import RandomForestClassifier
 
 # Library imports
 import pandas as pd
 import numpy as np
 import warnings
-
 import time
 
 start_time = time.time()
@@ -51,7 +30,6 @@ warnings.filterwarnings("ignore")
 
 # LOADING DATASET
 conflicting_data = pd.read_csv("C:\\Users\\sakma\\Desktop\\Ders Kayıtları\\ML-Dataset\\clinvar_conflicting.csv")
-
 print(conflicting_data.shape)
 
 # ********PREPROCESSING********#
@@ -61,8 +39,8 @@ print("Before drop nan cols", conflicting_data.shape)
 
 # If there is a column which has more than %99 percentage(fully nan) null we'll drop it.
 conflicting_data = conflicting_data.loc[:, conflicting_data.isnull().mean() < .99]
-# print(((conflicting_data.isnull().sum()) / total_num_of_values ) * 100 )
-
+total_num_of_values = conflicting_data.shape[0]
+print(((conflicting_data.isnull().sum()) / total_num_of_values) * 100)
 
 ''' 
 In cDNA_position, CDS_position, Protein_position values are int but type of features are Object. 
@@ -99,6 +77,8 @@ for i in ['cDNA_position', 'CDS_position', 'Protein_position']:
 conflicting_data[['cDNA_position', 'CDS_position', 'Protein_position']] = conflicting_data[
     ['cDNA_position', 'CDS_position', 'Protein_position']].apply(pd.to_numeric)
 
+a1 = conflicting_data.copy()
+
 '''
 In CHROM column there are values between 1-22 and some X and MT values. X means chromosome X and MT means mitochondrial chromosome.
 There is no Y chromosome therefore we can assume that our patient is a woman. We'll keep X as 23 and MT as 24. Then convert it's type into numeric
@@ -110,10 +90,10 @@ conflicting_data['CHROM'] = conflicting_data['CHROM'].replace('MT', 24)
 conflicting_data[['CHROM']] = conflicting_data[['CHROM']].astype(str)
 
 # correlation matrix for data
-# corrmat = conflicting_data.corr()
-# f, ax = plt.subplots(figsize=(12, 9))
-# sns.heatmap(corrmat, vmax=.8, square=True,annot=True);
-# plt.show()
+corrmat = conflicting_data.corr()
+f, ax = plt.subplots(figsize=(12, 9))
+sns.heatmap(corrmat, vmax=.8, square=True, annot=True);
+plt.show()
 
 '''After analyzing correlation matrix we clearly see that 'cDNA_position', 'CDS_position','Protein_position'
 features has 1 correlation between them. We can drop two of them and use just cDNA_position because it has less
@@ -164,29 +144,30 @@ conflicting_data[['EXON']] = conflicting_data[['EXON']].apply(pd.to_numeric)
 '''
 conflicting_data.drop(['Feature'], axis=1, inplace=True)
 
-'''
-In 'POS','CLNHGVS', and 'CLNVI'(%53 NaN already and have 27k unique values) features are unique for each variant. Therefore we can drop them.
-'''
-conflicting_data.drop(['POS', 'CLNHGVS', 'CLNVI'], axis=1, inplace=True)
+for col in conflicting_data.columns:
+    print(col + ' ' + str(len(conflicting_data[col].unique())) + ' ', (conflicting_data[col]).dtype)
+    # if(col == "PolyPhen" or col == "IMPACT" or col == "SIFT" or col == "pairs_has_disease" ):
+    #     print(conflicting_data[col].unique())
+    print()
 
 '''
-'CLNVC' is stand for varient type. %94 of values are 'single_nucleotide' and the 6% of the values are
-Deletion, Duplication, Inversion, or Insertion. We'll convert this column
-as a binary column whether it is single base-pair substitution or not.
+In CLNHGVS', and 'CLNVI'(%53 NaN already and have 27k unique values) features are unique for each variant. Therefore we can drop them.
+'''
+conflicting_data.drop(['CLNHGVS', 'CLNVI'], axis=1, inplace=True)
+
+'''
+%94 of values are 'single_nucleotide', and 6% of the values are Deletion, Duplication, Inversion, or 
+Insertion. We will convert this column as a binary column whether it is a single base-pair substitution or not. 
 https://www.ebi.ac.uk/training/online/courses/human-genetic-variation-introduction/what-is-genetic-variation/types-of-genetic-variation/
 At the same time we can conclude if the varient type is single base-pair or not from checking the
 length of ALT and REF alleles. If one of the allele includes more than one base-pairs it means that
 the varient type is multi base-pair substitution. Therefore we can drop the ALT and REF columns.
-
-Same situation for ORIGIN
 '''
 # We can check the above situation
 # print(conflicting_data[["ALT","REF","CLNVC"]][conflicting_data["CLNVC"]==1])
 
 
 conflicting_data["CLNVC"] = np.where(conflicting_data["CLNVC"].str.contains("single_nucleotide"), 1, 0)
-# if conflicting_data["ORIGIN"] == 1, assign 1, else assign 0.
-conflicting_data["ORIGIN"] = np.where((conflicting_data["ORIGIN"] == 1), 1, 0)
 conflicting_data.drop(['ALT', 'REF'], axis=1, inplace=True)
 
 '''
@@ -258,7 +239,7 @@ Fill EXON NaN values with 0(it means there is no EXON)
 conflicting_data['EXON'] = conflicting_data['EXON'].replace(np.nan, 0)
 
 '''
-AminoAcids and Codons are only given if the varient affects protein-coding sequence.
+AminoAcids and Codons are only given if the variant affects protein-coding sequence.
 '''
 conflicting_data[['Amino_acids', 'Codons']] = conflicting_data[['Amino_acids', 'Codons']].replace(np.nan, "not-affect")
 
@@ -287,26 +268,18 @@ from sklearn.impute import SimpleImputer
 
 imr = SimpleImputer(missing_values=np.nan, strategy='mean')
 imr = imr.fit(conflicting_data[['LoFtool']])
-conflicting_data['LoFtool'] = imr.transform(conflicting_data[['LoFtool']]).ravel()
+conflicting_data[['LoFtool']] = imr.transform(conflicting_data[['LoFtool']]).ravel()
 
-# Now we don't have any NaN values.
+#####ENCODING######
 
-
-# correlation matrix for data
-# corrmat = conflicting_data.corr()
-# f, ax = plt.subplots(figsize=(12, 9))
-# sns.heatmap(corrmat, vmax=.8, square=True,annot=True);
-# plt.show()
-
-
-# ENCODING
 
 # We can get the count of unique values for each column.
-for col in conflicting_data.columns:
-    print(col + ' ' + str(len(conflicting_data[col].unique())) + ' ', (conflicting_data[col]).dtype)
-    if (col == "PolyPhen" or col == "IMPACT" or col == "SIFT" or col == "pairs_has_disease"):
-        print(conflicting_data[col].unique())
-    print()
+# for col in conflicting_data.columns:
+#     print(col+' '+str(len(conflicting_data[col].unique())) +' ',(conflicting_data[col]).dtype)
+#     if(col == "PolyPhen" or col == "IMPACT" or col == "SIFT" or col == "pairs_has_disease" ):
+#         print(conflicting_data[col].unique())
+#     print()
+
 
 # There is natural order in IMPACT -> ['MODERATE' 'MODIFIER' 'LOW' 'HIGH']
 # BAM_EDIT 3 [nan 'OK' 'FAILED'] %51 null %49 OK %1 FAILED
@@ -314,14 +287,11 @@ for col in conflicting_data.columns:
 # SIFT 5 ['tolerated' 'deleterious_low_confidence' 'deleterious' nan 'tolerated_low_confidence']
 
 
-# categorical_features = ['CHROM', 'IMPACT', 'STRAND', 'BAM_EDIT', 'SIFT', 'PolyPhen',
-#                         'BLOSUM62','Consequence']
-
 binary_cols = ['CLNVC', 'ORIGIN', 'pairs_has_disease']
 # nominal_cols = ['SIFT','BAM_EDIT', 'PolyPhen','BIOTYPE','Feature_type']
 nominal_cols = ['BAM_EDIT', 'BIOTYPE', 'Feature_type']
 # nominal cols more than 20 unique values.
-feature_hashing_cols = ['SYMBOL', 'Amino_acids', 'Codons']
+feature_hashing_cols = ['SYMBOL', 'Amino_acids', 'Codons', 'CHROM', 'Consequence']
 
 # First of all IMPACT is ordinal column we'll mapping manually
 impact_ord_map = {'LOW': 0, 'MODERATE': 1, 'MODIFIER': 2, 'HIGH': 3}
@@ -351,23 +321,6 @@ def generate_col_names(col, n_features):
 
 from sklearn.feature_extraction import FeatureHasher
 
-# 24 unique values for CHROM
-fh = FeatureHasher(n_features=4, input_type='string')
-hashed_features = fh.fit_transform(conflicting_data['CHROM'])
-hashed_features = hashed_features.toarray()
-conflicting_data = pd.concat([conflicting_data, pd.DataFrame(hashed_features, columns=generate_col_names('CHROM', 4))],
-                             axis=1)
-
-# 48 unique values for Consequence
-fh = FeatureHasher(n_features=4, input_type='string')
-hashed_features = fh.fit_transform(conflicting_data['Consequence'])
-hashed_features = hashed_features.toarray()
-conflicting_data = pd.concat(
-    [conflicting_data, pd.DataFrame(hashed_features, columns=generate_col_names('Consequence', 4))],
-    axis=1)
-
-conflicting_data.drop(['CHROM', 'Consequence'], axis=1, inplace=True)
-
 # For feature_hashing_cols we have categorical values more than 1000. We'll apply FeatureHasher with n_features = 16
 for col in feature_hashing_cols:
     n = 4
@@ -378,8 +331,16 @@ for col in feature_hashing_cols:
                                  axis=1)
     conflicting_data.drop([col], axis=1, inplace=True)
 
-# buradan
+# Scaling for POS and cDNA_position
+from sklearn.preprocessing import StandardScaler
 
+scaler = StandardScaler()
+
+conflicting_data[['POS', 'cDNA_position']] = scaler.fit_transform(conflicting_data[['POS', 'cDNA_position']])
+
+print("Data shape after all", conflicting_data.shape)
+
+# Apply ML Algorithms
 from sklearn.decomposition import PCA
 
 y = conflicting_data.CLASS
@@ -387,17 +348,16 @@ X = conflicting_data.drop(["CLASS"], axis=1, inplace=False)
 
 print("Before sampling:", X.shape, y.shape)
 
-rnd_clf = RandomForestClassifier(n_estimators=100, n_jobs=-1, random_state=42)
-rnd_clf.fit(X, y)
+# FEATURE IMPORTANCE PLOT
+# model = RandomForestClassifier()
+# model.fit(X, y)
+# plt.figure(figsize=(20,10))
+# (pd.Series(model.feature_importances_, index=X.columns)
+#    .nlargest(15)
+#    .plot(kind='barh'))
 
-features = X.columns
-importances = rnd_clf.feature_importances_
-indices = np.argsort(importances)
+# plt.show()
 
-plt.figure(figsize=(20, 10))
-feat_importances = pd.Series(importances, index=features)
-feat_importances.nlargest(len(indices)).plot(kind='bar', color='#79CCB3');
-plt.show()
 
 # we will use the implementations provided by the imbalanced-learn Python library, which can be installed via pip as follows:
 # sudo pip install imbalanced-learn
@@ -409,6 +369,7 @@ from sklearn.metrics import average_precision_score
 from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
 from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.metrics import roc_curve, auc
+from sklearn.decomposition import PCA
 
 # ros = ADASYN(random_state=0)
 # ros = RandomUnderSampler(random_state=0,sampling_strategy=0.8)
@@ -416,25 +377,36 @@ from sklearn.metrics import roc_curve, auc
 
 
 # We split the data into train(%75) and test(%25)
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.25, random_state=0)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=0)
+
+# y_train before UnderSample
+# y_train_raw = y_train.to_frame()
+# ax = sns.countplot(x="CLASS", data=y_train_raw)
+# ax.set(xlabel='CLASS', ylabel='Number of Variants')
+# plt.title("y_train Before Sampling")
+# plt.show()
+
 
 ros = RandomUnderSampler(random_state=0, sampling_strategy=0.8)
 X_train, y_train = ros.fit_resample(X_train, y_train)
 
-y_train_raw = y_train.to_frame()
-ax = sns.countplot(x="CLASS", data=y_train_raw)
-ax.set(xlabel='CLASS', ylabel='Number of Variants')
-plt.title("y_train")
-plt.show()
+# y_train after UnderSample
+# y_train_raw = y_train.to_frame()
+# ax = sns.countplot(x="CLASS", data=y_train_raw)
+# ax.set(xlabel='CLASS', ylabel='Number of Variants')
+# plt.title("y_train After Sampling")
+# plt.show()
 
-y_test_raw = y_test.to_frame()
-ax = sns.countplot(x="CLASS", data=y_test_raw)
-ax.set(xlabel='CLASS', ylabel='Number of Variants', label="y_test")
-plt.title("y_test")
-plt.show()
+
+# y_test after UnderSample
+# y_test_raw = y_test.to_frame()
+# ax = sns.countplot(x="CLASS", data=y_test_raw)
+# ax.set(xlabel='CLASS', ylabel='Number of Variants', label="y_test")
+# plt.title("y_test")
+# plt.show()
 
 # print("After sampling:",X_resampled.shape, y_resampled.shape)
-from sklearn.metrics import f1_score
+
 
 machine_learning_algorithms = (GradientBoostingClassifier(n_estimators=100, learning_rate=0.1,
                                                           max_depth=7, random_state=0),
@@ -446,6 +418,9 @@ machine_learning_algorithms = (GradientBoostingClassifier(n_estimators=100, lear
                                )
 ml_names = ("GradientBoost", "Logistic Regression", "RandomForest", "DecisionTree")
 
+# We'll keep AUC scores as dictionary
+auc_scores = {}
+
 for ml, ml_name in zip(machine_learning_algorithms, ml_names):
     clf = ml
     clf.fit(X_train, y_train)
@@ -456,7 +431,7 @@ for ml, ml_name in zip(machine_learning_algorithms, ml_names):
     fpr, tpr, _ = roc_curve(y_test, preds)
 
     auc_score = auc(fpr, tpr)
-
+    auc_scores[ml_name] = auc_score
     plt.subplots(figsize=(8, 6))
     plt.title('ROC Curve')
     plt.plot(fpr, tpr, label='{} AUC = {:.2f}'.format(ml_name, auc_score))
@@ -468,56 +443,14 @@ for ml, ml_name in zip(machine_learning_algorithms, ml_names):
     plt.legend(loc='lower right')
     plt.show()
 
-    # clf = ml
-    # clf.fit(X_train, y_train)
-    # predict = clf.predict(X_test)
-    # # print("{} Accuracy: %".format("SVC"), 100 - mean_absolute_error(y_test, predict) * 100)
     print("{} Accuracy: %".format("Accuracy score:"), accuracy_score(y_test, predict) * 100)
-    # mae = mean_absolute_error(y_test, predict)
-    # print('MAE: %.3f' % mae)
     print("{} Accuracy: %".format("ROC"), roc_auc_score(y_test, predict) * 100)
     print("Classification Report : for:", ml_name, "\n", classification_report(y_test, predict))
-    # false_positive_rate, true_positive_rate, thresholds = roc_curve(y_test, predict)
-    # roc_auc = auc(false_positive_rate, true_positive_rate)
-    # # roc_auc = roc_auc_score(y_test, predict)
-    # print("AUC:",roc_auc)
-    # fpr, tpr, _ = roc_curve(y_test, predict)
-    # # plot the roc curve for the model
-    # plt.plot(fpr, tpr, label='{} AUC = {:.2f}'.format(ml_name,roc_auc))
-    # plt.plot([0,1],[0,1],'r--')
 
-    # plt.xlabel('False Positive Rate')
-    # plt.ylabel('True Positive Rate')
-    # plt.legend(loc='lower right')
-    # plt.show()
     print("*********************")
 
-# clf = GradientBoostingClassifier()
-# clf.fit(X_train, y_train)
-# predict = clf.predict(X_test)
-# print(X_train.shape, y_train.shape)
-# print("{} Accuracy: %".format("SVC"), 100 - mean_absolute_error(y_test, predict) * 100)
-# print("{} Accuracy: %".format("AUC"), roc_auc_score(y_test, predict) * 100)
-# print('Average precision-recall score: {0:0.2f}'.format(average_precision_score(y_test, predict)))
-# print( "Classification Report :\n ", classification_report(y_test, predict))
-
-# from sklearn.metrics import confusion_matrix, accuracy_score, classification_report, precision_score, f1_score, roc_auc_score
-# from sklearn.linear_model import LogisticRegression
-# from sklearn.tree import DecisionTreeClassifier
-# from sklearn.ensemble import RandomForestClassifier
-# from sklearn.metrics import precision_recall_fscore_support as score
-# precision_lr, recall_lr = (round(float(x),2) for x in list(score(y_test,
-#                                                                     predict,
-#                                                                     average='weighted'))[:-2])
-
-
-# rfe = RFE(clf,15)
-# rfe.fit(X_train, y_train)
-# predict = rfe.predict(X_test)
-# print("RFE1 Accuracy: %", 100 - mean_absolute_error(y_test, predict) * 100)
-
-
-####UNDERSAMPLING YAPTIM SADECE TRAIN DATASI IÇIN ORDAN DEVAMKE
-
-
+# Convert auc_scores dictionary into dataframe and plot them.
+auc_df = pd.DataFrame(list(auc_scores.items()), columns=['ML-Algorithm', 'Accuracy'])
+auc_df.sort_values(by=['Accuracy'], ascending=False).plot(kind='bar', x='ML-Algorithm', y='Accuracy', figsize=(20, 8),
+                                                          color='#4deeea', rot=0, title="AUC for Each Algorithm");
 print("--- %s seconds ---" % (time.time() - start_time))
